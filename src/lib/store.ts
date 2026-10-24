@@ -9,7 +9,7 @@ import type { Data, RowMap, TableName } from './types'
 // 衝突處理：最後寫入者為準。只有一個使用者，這樣就夠了。
 
 // 依外鍵相依順序排列，上傳時要先建 habits 才能建 habit_logs
-const TABLES: TableName[] = ['habits', 'habit_logs', 'goals', 'rewards', 'redemptions']
+const TABLES: TableName[] = ['habits', 'habit_logs', 'goals', 'rewards', 'redemptions', 'todos', 'schedule_blocks']
 const PAGE = 1000
 
 type AnyRow = RowMap[TableName]
@@ -22,7 +22,15 @@ export interface SyncState {
   error: string | null
 }
 
-const emptyData = (): Data => ({ habits: {}, habit_logs: {}, goals: {}, rewards: {}, redemptions: {} })
+const emptyData = (): Data => ({
+  habits: {},
+  habit_logs: {},
+  goals: {},
+  rewards: {},
+  redemptions: {},
+  todos: {},
+  schedule_blocks: {},
+})
 
 function keyOf(table: TableName, row: AnyRow): string {
   if (table === 'habit_logs') {
@@ -109,28 +117,37 @@ function scheduleFlush() {
   flushTimer = setTimeout(() => void syncNow({ pull: false }), 800)
 }
 
-async function flush() {
+// 一張表失敗不影響其他表，例如新功能的資料表還沒建立時，習慣仍然可以同步
+async function flush(): Promise<Error | null> {
   const entries = Object.entries(pending)
-  if (!entries.length) return
+  if (!entries.length) return null
+  let firstError: Error | null = null
+  const failed = new Set<TableName>()
   for (const table of TABLES) {
     const rows = entries.filter(([, e]) => e.table === table).map(([, e]) => e.row)
     if (!rows.length) continue
     const { error } = await supabase
       .from(table)
       .upsert(rows, { onConflict: table === 'habit_logs' ? 'habit_id,date' : 'id' })
-    if (error) throw error
+    if (error) {
+      failed.add(table)
+      firstError ??= new Error(`${table}: ${error.message}`)
+    }
   }
   // 上傳期間若又被修改過，保留新的那筆等下次上傳
   const next = { ...pending }
-  for (const [k, e] of entries) if (next[k] === e) delete next[k]
+  for (const [k, e] of entries) if (next[k] === e && !failed.has(e.table)) delete next[k]
   pending = next
   persist()
+  return firstError
 }
 
-async function pull() {
+async function pull(): Promise<Error | null> {
   const fresh = emptyData()
+  let firstError: Error | null = null
   for (const table of TABLES) {
     const order = table === 'habit_logs' ? 'date' : 'id'
+    const target = fresh[table] as Record<string, AnyRow>
     for (let from = 0; ; from += PAGE) {
       const { data: rows, error } = await supabase
         .from(table)
@@ -138,8 +155,12 @@ async function pull() {
         .order(order)
         .order(table === 'habit_logs' ? 'habit_id' : 'id')
         .range(from, from + PAGE - 1)
-      if (error) throw error
-      const target = fresh[table] as Record<string, AnyRow>
+      if (error) {
+        // 拉不到就保留本機的資料
+        Object.assign(target, data[table])
+        firstError ??= new Error(`${table}: ${error.message}`)
+        break
+      }
       for (const r of rows as AnyRow[]) target[keyOf(table, r)] = r
       if (rows.length < PAGE) break
     }
@@ -149,6 +170,7 @@ async function pull() {
   }
   data = fresh
   persist()
+  return firstError
 }
 
 let running: Promise<void> | null = null
@@ -170,9 +192,11 @@ export async function syncNow({ pull: doPull = true } = {}): Promise<void> {
     sync = { ...sync, status: 'syncing', error: null }
     emit()
     try {
-      await flush()
-      if (doPull) await pull()
+      const flushError = await flush()
+      const pullError = doPull ? await pull() : null
       if (userId !== uid) return
+      const error = flushError ?? pullError
+      if (error) throw error
       sync = { ...sync, status: 'idle', lastSync: doPull ? new Date().toISOString() : sync.lastSync }
       persist()
     } catch (err) {

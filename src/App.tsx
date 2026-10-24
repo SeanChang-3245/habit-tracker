@@ -6,12 +6,15 @@ import { supabase } from './lib/supabase'
 import { Goals } from './pages/Goals'
 import { Habits } from './pages/Habits'
 import { Login } from './pages/Login'
+import { Planner } from './pages/Planner'
 import { Rewards } from './pages/Rewards'
 import { Stats } from './pages/Stats'
 import { Today } from './pages/Today'
+import { Todos } from './pages/Todos'
 
 const TABS = [
   { id: 'today', label: '今天', icon: '☀️' },
+  { id: 'plan', label: '規劃', icon: '🗓️' },
   { id: 'habits', label: '習慣', icon: '📝' },
   { id: 'goals', label: '目標', icon: '🎯' },
   { id: 'rewards', label: '獎勵', icon: '🎁' },
@@ -42,6 +45,8 @@ export default function App() {
 function Main({ email }: { email: string }) {
   const { data, sync } = useStore()
   const [tab, setTab] = useState<Tab>('today')
+  const [planView, setPlanView] = useState<'todos' | 'schedule'>('schedule')
+  const wide = tab === 'plan' && planView === 'schedule'
   const [addingHabit, setAddingHabit] = useState(false)
 
   const syncLabel = {
@@ -58,7 +63,7 @@ function Main({ email }: { email: string }) {
   }[sync.status]
 
   return (
-    <div className="mx-auto min-h-dvh max-w-2xl pb-[calc(5rem+env(safe-area-inset-bottom))]">
+    <div className={`mx-auto min-h-dvh pb-[calc(5rem+env(safe-area-inset-bottom))] ${wide ? 'max-w-5xl' : 'max-w-2xl'}`}>
       <header className="sticky top-0 z-10 flex items-center justify-between bg-zinc-50/90 px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-3 backdrop-blur dark:bg-zinc-950/90">
         <h1 className="text-lg font-bold">🌱 習慣養成</h1>
         <div className="flex items-center gap-2">
@@ -85,6 +90,27 @@ function Main({ email }: { email: string }) {
             }}
           />
         )}
+        {tab === 'plan' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-zinc-200/70 p-1 dark:bg-zinc-800">
+              {(
+                [
+                  ['todos', '📋 待辦'],
+                  ['schedule', '🕒 時間表'],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setPlanView(v)}
+                  className={`rounded-lg py-1.5 text-sm font-medium ${planView === v ? 'bg-white shadow-sm dark:bg-zinc-950' : 'text-zinc-500'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {planView === 'todos' ? <Todos onPlan={() => setPlanView('schedule')} /> : <Planner />}
+          </div>
+        )}
         {tab === 'habits' && <Habits adding={addingHabit} setAdding={setAddingHabit} />}
         {tab === 'goals' && <Goals />}
         {tab === 'rewards' && <Rewards />}
@@ -102,7 +128,7 @@ function Main({ email }: { email: string }) {
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
-        <div className="mx-auto grid max-w-2xl grid-cols-5">
+        <div className="mx-auto grid max-w-2xl grid-cols-6">
           {TABS.map((t) => (
             <button
               key={t.id}

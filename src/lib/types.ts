@@ -64,12 +64,43 @@ export interface Redemption {
   updated_at: string
 }
 
+export interface Todo {
+  id: string
+  user_id: string
+  title: string
+  notes: string
+  /** 預估要花幾分鐘，30 的倍數 */
+  estimate_minutes: number
+  done: boolean
+  done_at: string | null
+  sort_order: number
+  deleted: boolean
+  updated_at: string
+}
+
+export interface ScheduleBlock {
+  id: string
+  user_id: string
+  date: string
+  /** 從 00:00 開始算的第幾個半小時，0–47 */
+  start_slot: number
+  /** 佔幾個半小時 */
+  slots: number
+  todo_id: string | null
+  /** 沒有對應 todo 時顯示的名稱，例如「午餐」 */
+  title: string
+  deleted: boolean
+  updated_at: string
+}
+
 export interface RowMap {
   habits: Habit
   habit_logs: HabitLog
   goals: Goal
   rewards: Reward
   redemptions: Redemption
+  todos: Todo
+  schedule_blocks: ScheduleBlock
 }
 
 export type TableName = keyof RowMap

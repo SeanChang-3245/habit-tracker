@@ -63,11 +63,37 @@ create table if not exists public.redemptions (
   updated_at timestamptz not null default now()
 );
 
+-- 時間規劃
+create table if not exists public.todos (
+  id uuid primary key,
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  title text not null,
+  notes text not null default '',
+  estimate_minutes integer not null default 30 check (estimate_minutes >= 30 and estimate_minutes % 30 = 0),
+  done boolean not null default false,
+  done_at timestamptz,
+  sort_order integer not null default 0,
+  deleted boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.schedule_blocks (
+  id uuid primary key,
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  date date not null,
+  start_slot integer not null check (start_slot between 0 and 47),
+  slots integer not null check (slots >= 1 and start_slot + slots <= 48),
+  todo_id uuid references public.todos on delete set null,
+  title text not null default '',
+  deleted boolean not null default false,
+  updated_at timestamptz not null default now()
+);
+
 -- 每個人只能讀寫自己的資料
 do $$
 declare t text;
 begin
-  foreach t in array array['habits', 'habit_logs', 'goals', 'rewards', 'redemptions'] loop
+  foreach t in array array['habits', 'habit_logs', 'goals', 'rewards', 'redemptions', 'todos', 'schedule_blocks'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "own rows" on public.%I', t);
     execute format(
